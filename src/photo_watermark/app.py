@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QTextEdit,
@@ -169,6 +171,7 @@ class MainWindow(QMainWindow):
         self.scene = QGraphicsScene(self)
         self.pixmap_item = None
         self.watermark_item = WatermarkTextItem()
+        self.watermark_item.setZValue(10)
         self.watermark_item.positionChanged.connect(self._on_manual_position_change)
 
         self.preview = PreviewView()
@@ -179,19 +182,23 @@ class MainWindow(QMainWindow):
         self.image_list.currentRowChanged.connect(self._on_image_selected)
         self.image_list.filesDropped.connect(self._handle_dropped_paths)
 
-        controls = self._build_controls()
+        controls_widget = self._build_controls()
+        controls_area = QScrollArea()
+        controls_area.setWidgetResizable(True)
+        controls_area.setWidget(controls_widget)
+        controls_area.setMinimumWidth(260)
 
-        splitter = QWidget()
-        layout = QHBoxLayout(splitter)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(self.image_list, 1)
+        self.preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.image_list.setMinimumWidth(220)
 
-        preview_container = QVBoxLayout()
-        preview_container.addWidget(self.preview, 4)
-        preview_container.addWidget(controls, 3)
-
-        layout.addLayout(preview_container, 3)
-        self.setCentralWidget(splitter)
+        central = QWidget()
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setSpacing(10)
+        main_layout.addWidget(self.image_list, 1)
+        main_layout.addWidget(self.preview, 6)
+        main_layout.addWidget(controls_area, 3)
+        self.setCentralWidget(central)
 
         toolbar = QToolBar("File")
         toolbar.setIconSize(QSize(16, 16))
@@ -478,14 +485,27 @@ class MainWindow(QMainWindow):
         collection.append(ImageEntry(path, image))
 
     def _load_preview(self) -> None:
-        self.scene.clear()
-        self.scene.addItem(self.watermark_item)
         if not (0 <= self.current_index < len(self.image_entries)):
-            self.pixmap_item = None
+            if self.pixmap_item is not None:
+                self.scene.removeItem(self.pixmap_item)
+                self.pixmap_item = None
+            self.scene.setSceneRect(QRectF())
             return
+
         entry = self.image_entries[self.current_index]
         pixmap = entry.pixmap
+
+        if self.pixmap_item is not None:
+            self.scene.removeItem(self.pixmap_item)
+            self.pixmap_item = None
+
         self.pixmap_item = self.scene.addPixmap(pixmap)
+        if self.watermark_item.scene() is None:
+            self.scene.addItem(self.watermark_item)
+        elif self.watermark_item.scene() is not self.scene:
+            self.watermark_item.scene().removeItem(self.watermark_item)
+            self.scene.addItem(self.watermark_item)
+
         self.scene.setSceneRect(pixmap.rect())
         self.preview.fitInViewIfNeeded()
         self._update_watermark_item()
