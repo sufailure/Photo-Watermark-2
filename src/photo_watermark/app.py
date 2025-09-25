@@ -127,13 +127,44 @@ class WatermarkTextItem(QGraphicsTextItem):
         self.setFlag(QGraphicsTextItem.ItemSendsScenePositionChanges, True)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
-            scene_rect = self.scene().sceneRect()
-            width = max(scene_rect.width(), 1)
-            height = max(scene_rect.height(), 1)
-            x_ratio = max(0.0, min(1.0, value.x() / width))
-            y_ratio = max(0.0, min(1.0, value.y() / height))
-            self.positionChanged.emit(x_ratio, y_ratio)
+        scene = self.scene()
+        if scene:
+            scene_rect = scene.sceneRect()
+            text_rect = self.boundingRect()
+            available_width = max(scene_rect.width() - text_rect.width(), 0.0)
+            available_height = max(scene_rect.height() - text_rect.height(), 0.0)
+
+            if change == QGraphicsItem.ItemPositionChange:
+                x = value.x() - scene_rect.left()
+                y = value.y() - scene_rect.top()
+
+                if available_width <= 0:
+                    x = (scene_rect.width() - text_rect.width()) / 2
+                else:
+                    x = max(0.0, min(x, available_width))
+
+                if available_height <= 0:
+                    y = (scene_rect.height() - text_rect.height()) / 2
+                else:
+                    y = max(0.0, min(y, available_height))
+
+                return QPointF(scene_rect.left() + x, scene_rect.top() + y)
+
+            if change == QGraphicsItem.ItemPositionHasChanged:
+                x = value.x() - scene_rect.left()
+                y = value.y() - scene_rect.top()
+
+                if available_width <= 0:
+                    x_ratio = 0.5
+                else:
+                    x_ratio = max(0.0, min(1.0, x / available_width))
+
+                if available_height <= 0:
+                    y_ratio = 0.5
+                else:
+                    y_ratio = max(0.0, min(1.0, y / available_height))
+
+                self.positionChanged.emit(x_ratio, y_ratio)
         return super().itemChange(change, value)
 
 
@@ -526,13 +557,29 @@ class MainWindow(QMainWindow):
         self.preview.viewport().update()
 
     def _apply_watermark_position(self) -> None:
-        if not self.scene.sceneRect().isNull():
-            width = self.scene.sceneRect().width()
-            height = self.scene.sceneRect().height()
-            x_ratio, y_ratio = self.watermark_settings.position_ratio
-            x = x_ratio * width
-            y = y_ratio * height
-            self.watermark_item.setPos(QPointF(x, y))
+        scene_rect = self.scene.sceneRect()
+        if scene_rect.isNull():
+            return
+
+        text_rect = self.watermark_item.boundingRect()
+        available_width = scene_rect.width() - text_rect.width()
+        available_height = scene_rect.height() - text_rect.height()
+
+        x_ratio, y_ratio = self.watermark_settings.position_ratio
+        x_ratio = max(0.0, min(1.0, x_ratio))
+        y_ratio = max(0.0, min(1.0, y_ratio))
+
+        if available_width <= 0:
+            x = scene_rect.left() + (scene_rect.width() - text_rect.width()) / 2
+        else:
+            x = scene_rect.left() + x_ratio * available_width
+
+        if available_height <= 0:
+            y = scene_rect.top() + (scene_rect.height() - text_rect.height()) / 2
+        else:
+            y = scene_rect.top() + y_ratio * available_height
+
+        self.watermark_item.setPos(QPointF(x, y))
 
     def _update_color_preview(self) -> None:
         palette = self.color_preview.palette()
